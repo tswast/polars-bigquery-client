@@ -179,6 +179,7 @@ pub async fn read_bigquery_async(table_id: &str) -> Result<DataFrame, Box<dyn st
         diagonal: false,
         from_partitioned_ds: false,
         maintain_order: false,
+        strict: false,
     };
     let combined = polars::prelude::concat(
         batches

@@ -3,11 +3,19 @@ mod bigquery;
 use pyo3::prelude::*;
 use pyo3::pyfunction;
 use pyo3_polars::PyDataFrame;
+use std::sync::Once;
 
 use crate::bigquery::read_bigquery_async;
 
+static INIT_CRYPTO: Once = Once::new();
+
 #[pyfunction]
 pub fn read_bigquery(table_id: &str) -> pyo3::PyResult<PyDataFrame> {
+    INIT_CRYPTO.call_once(|| {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        // ignore if another crate already set the default provider.
+    });
+
     let rt = pyo3_async_runtimes::tokio::get_runtime();
     let result = rt.block_on(read_bigquery_async(table_id));
     match result {
@@ -20,6 +28,11 @@ pub fn read_bigquery(table_id: &str) -> pyo3::PyResult<PyDataFrame> {
 
 #[pymodule]
 fn polars_bigquery(m: &Bound<PyModule>) -> PyResult<()> {
+    INIT_CRYPTO.call_once(|| {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        // ignore if another crate already set the default provider.
+    });
+
     m.add_wrapped(wrap_pyfunction!(read_bigquery)).unwrap();
 
     Ok(())
