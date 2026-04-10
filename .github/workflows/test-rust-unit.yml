@@ -3,14 +3,14 @@ name: Test Rust (Unit)
 on:
   pull_request:
     paths:
-      - src/**
+      - crates/**
       - Cargo.toml
       - .github/workflows/test-rust-unit.yml
     push:
       branches:
         - main
     paths:
-      - src/**
+      - creates/**
       - Cargo.toml
       - .github/workflows/test-rust-unit.yml
 
