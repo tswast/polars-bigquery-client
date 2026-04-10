@@ -6,9 +6,9 @@ on:
       - crates/**
       - Cargo.toml
       - .github/workflows/test-rust-unit.yml
-    push:
-      branches:
-        - main
+  push:
+    branches:
+      - main
     paths:
       - creates/**
       - Cargo.toml
