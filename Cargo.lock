@@ -2012,9 +2012,6 @@ dependencies = [
  "polars-arrow",
  "polars-core",
  "polars-io",
- "pyo3",
- "pyo3-async-runtimes",
- "pyo3-polars",
  "rand 0.10.0",
  "regex",
  "rustls",
@@ -2646,6 +2643,17 @@ checksum = "3852766467df634d74f0b2d7819bf8dc483a0eb2e3b0f50f756f9cfe8b0d18d8"
 dependencies = [
  "ar_archive_writer",
  "cc",
+]
+
+[[package]]
+name = "py-polars-bigquery"
+version = "0.1.0"
+dependencies = [
+ "polars-bigquery",
+ "pyo3",
+ "pyo3-async-runtimes",
+ "pyo3-polars",
+ "rustls",
 ]
 
 [[package]]

@@ -1,11 +1,9 @@
-mod bigquery;
-
 use pyo3::prelude::*;
 use pyo3::pyfunction;
 use pyo3_polars::PyDataFrame;
 use std::sync::Once;
 
-use crate::bigquery::read_bigquery_async;
+use polars_bigquery_lib::read_bigquery_async;
 
 static INIT_CRYPTO: Once = Once::new();
 
