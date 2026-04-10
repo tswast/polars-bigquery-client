@@ -90,7 +90,14 @@ fn table_id_to_table_path(table_id: &str) -> Result<String, Box<dyn std::error::
     ))
 }
 
+static INIT_CRYPTO: std::sync::Once = std::sync::Once::new();
+
 pub async fn read_bigquery_async(table_id: &str) -> Result<DataFrame, Box<dyn std::error::Error>> {
+    INIT_CRYPTO.call_once(|| {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        // ignore if another crate already set the default provider.
+    });
+
     // Detect Google project ID using environment variables PROJECT_ID/GCP_PROJECT_ID
     // or GKE metadata server when the app runs inside GKE
     let google_project_id = GoogleEnvironment::detect_google_project_id().await

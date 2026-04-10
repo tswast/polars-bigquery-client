@@ -1,0 +1,15 @@
+[package]
+name = "py-polars-bigquery"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "polars_bigquery"
+crate-type= ["cdylib"]
+
+[dependencies]
+polars-bigquery-lib = { package = "polars-bigquery", path = "../crates/polars-bigquery" }
+pyo3 = { version = "0.27", features = ["abi3-py310"] }
+pyo3-async-runtimes = { version = "0.27", features = ["attributes", "tokio-runtime"] }
+pyo3-polars = { version = "0.26.0", features = ["derive", "lazy"] }
+rustls = { version = "0.23.37", features = ["ring"] }
