@@ -103,7 +103,7 @@ pub async fn read_bigquery_async(table_id: &str) -> Result<DataFrame, Box<dyn st
         GoogleApi::from_function(
             // Maximum row size in BigQuery is 100 MB, so this should allow for
             // the largest possible row plus some overhead.
-            |inner| BigQueryReadClient::new(inner).max_decoding_message_size(101 * 1024 * 1024),
+            |inner| BigQueryReadClient::new(inner).max_decoding_message_size(128* 1024 * 1024),
             "https://bigquerystorage.googleapis.com",
             None,
         )
