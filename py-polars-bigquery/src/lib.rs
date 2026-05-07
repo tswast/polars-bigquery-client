@@ -27,14 +27,14 @@ impl gcloud_sdk::Source for PythonTokenSource {
             }
         }
 
-        let token = Python::with_gil(|py| -> Result<gcloud_sdk::Token, gcloud_sdk::error::Error> {
+        let token = Python::attach(|py| -> Result<gcloud_sdk::Token, gcloud_sdk::error::Error> {
             let provider = self.provider.bind(py);
             let result = provider.call0().map_err(|_| {
                 gcloud_sdk::error::Error::from(gcloud_sdk::error::ErrorKind::TokenSource)
             })?;
 
             // result is (token_data, expiration)
-            let tuple = result.downcast::<pyo3::types::PyTuple>().map_err(|_| {
+            let tuple = result.cast::<pyo3::types::PyTuple>().map_err(|_| {
                 gcloud_sdk::error::Error::from(gcloud_sdk::error::ErrorKind::TokenSource)
             })?;
 
@@ -51,7 +51,7 @@ impl gcloud_sdk::Source for PythonTokenSource {
                 .map_err(|_| {
                     gcloud_sdk::error::Error::from(gcloud_sdk::error::ErrorKind::TokenSource)
                 })?
-                .downcast::<pyo3::types::PyString>()
+                .cast::<pyo3::types::PyString>()
                 .map_err(|_| {
                     gcloud_sdk::error::Error::from(gcloud_sdk::error::ErrorKind::TokenSource)
                 })?
