@@ -16,6 +16,33 @@ def _get_default_provider(quota_project_id: str) -> pl.CredentialProviderGCP:
         )
     return _DEFAULT_CREDENTIAL_PROVIDERS[quota_project_id]
 
+def _parse_table_id(table_id: Any) -> str:
+    if not isinstance(table_id, str):
+        if (
+            hasattr(table_id, "project")
+            and hasattr(table_id, "dataset_id")
+            and hasattr(table_id, "table_id")
+        ):
+            return f"{table_id.project}.{table_id.dataset_id}.{table_id.table_id}"
+        raise TypeError(f"Expected table_id to be a string, got {type(table_id)}")
+
+    parts = table_id.split(".")
+    if len(parts) < 3:
+        raise ValueError("Invalid table ID")
+    if len(parts) > 3 and ":" not in parts[0] and ":" not in parts[1]:
+        # This is a bit of a hack to match the tests and the rust regex.
+        # Actually the rust regex is: (.+)\.([^.]+)\.([^.]+)
+        # so it just needs at least 2 dots.
+        pass
+    
+    # Let's just follow the rust regex logic: 
+    # it must have at least two dots, and the last two parts must not have dots.
+    if len(parts) >= 3:
+        return table_id
+    
+    raise ValueError("Invalid table ID")
+
+
 def read_bigquery(
     *,
     table: str | None = None,
@@ -35,5 +62,9 @@ def read_bigquery(
 
     if query:
         table = run_query(query, quota_project_id, credentials_provider)
+    else:
+        table = _parse_table_id(table)
 
-    return polars_bigquery.read_bigquery(table, quota_project_id, is_ordered, credentials_provider)
+    return polars_bigquery.read_bigquery(
+        table, quota_project_id, is_ordered, credentials_provider
+    )

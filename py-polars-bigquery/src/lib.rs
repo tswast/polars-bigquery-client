@@ -1,5 +1,5 @@
-use std::sync::Once;
 use std::sync::Mutex;
+use std::sync::Once;
 
 use async_trait::async_trait;
 use chrono::Utc;
@@ -9,17 +9,17 @@ use pyo3::pyfunction;
 use pyo3_polars::PyDataFrame;
 
 static INIT_CRYPTO: Once = Once::new();
-static GLOBAL_TOKEN_CACHE: Mutex<Option<gcloud_sdk::Token>> = Mutex::new(None);
 
 struct PythonTokenSource {
     provider: Py<PyAny>,
+    cache: Mutex<Option<gcloud_sdk::Token>>,
 }
 
 #[async_trait]
 impl gcloud_sdk::Source for PythonTokenSource {
     async fn token(&self) -> Result<gcloud_sdk::Token, gcloud_sdk::error::Error> {
         {
-            let cache = GLOBAL_TOKEN_CACHE.lock().unwrap();
+            let cache = self.cache.lock().unwrap();
             if let Some(token) = cache.as_ref() {
                 if token.expiry > Utc::now() + chrono::Duration::seconds(60) {
                     return Ok(token.clone());
@@ -82,7 +82,7 @@ impl gcloud_sdk::Source for PythonTokenSource {
         })?;
 
         {
-            let mut cache = GLOBAL_TOKEN_CACHE.lock().unwrap();
+            let mut cache = self.cache.lock().unwrap();
             *cache = Some(token.clone());
         }
         Ok(token)
@@ -103,6 +103,7 @@ pub fn read_bigquery(
 
     let token_source = PythonTokenSource {
         provider: credentials_provider,
+        cache: Mutex::new(None),
     };
     let token_source_type = gcloud_sdk::TokenSourceType::ExternalSource(Box::new(token_source));
 
