@@ -1,12 +1,15 @@
 use std::sync::Once;
+use std::sync::Mutex;
 
 use async_trait::async_trait;
+use chrono::Utc;
 use polars_bigquery_lib::read_bigquery_async;
 use pyo3::prelude::*;
 use pyo3::pyfunction;
 use pyo3_polars::PyDataFrame;
 
 static INIT_CRYPTO: Once = Once::new();
+static GLOBAL_TOKEN_CACHE: Mutex<Option<gcloud_sdk::Token>> = Mutex::new(None);
 
 struct PythonTokenSource {
     provider: Py<PyAny>,
@@ -15,7 +18,16 @@ struct PythonTokenSource {
 #[async_trait]
 impl gcloud_sdk::Source for PythonTokenSource {
     async fn token(&self) -> Result<gcloud_sdk::Token, gcloud_sdk::error::Error> {
-        Python::with_gil(|py| {
+        {
+            let cache = GLOBAL_TOKEN_CACHE.lock().unwrap();
+            if let Some(token) = cache.as_ref() {
+                if token.expiry > Utc::now() + chrono::Duration::seconds(60) {
+                    return Ok(token.clone());
+                }
+            }
+        }
+
+        let token = Python::with_gil(|py| -> Result<gcloud_sdk::Token, gcloud_sdk::error::Error> {
             let provider = self.provider.bind(py);
             let result = provider.call0().map_err(|_| {
                 gcloud_sdk::error::Error::from(gcloud_sdk::error::ErrorKind::TokenSource)
@@ -67,7 +79,13 @@ impl gcloud_sdk::Source for PythonTokenSource {
                 token_type: "Bearer".to_string(),
                 expiry,
             })
-        })
+        })?;
+
+        {
+            let mut cache = GLOBAL_TOKEN_CACHE.lock().unwrap();
+            *cache = Some(token.clone());
+        }
+        Ok(token)
     }
 }
 
