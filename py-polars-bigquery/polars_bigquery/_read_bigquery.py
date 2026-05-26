@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Dict
 
 import polars as pl
+import google.cloud.bigquery
+
 
 from . import polars_bigquery
 from .core.run_query import run_query
@@ -23,21 +25,18 @@ def _parse_table_id(table_id: Any) -> str:
             and hasattr(table_id, "dataset_id")
             and hasattr(table_id, "table_id")
         ):
+            if hasattr(table_id, "dataset_id") and isinstance(table_id.dataset_id, str) and "." in table_id.dataset_id:
+                raise TypeError("BigLake tables are not supported yet")
             return f"{table_id.project}.{table_id.dataset_id}.{table_id.table_id}"
         raise TypeError(f"Expected table_id to be a string, got {type(table_id)}")
 
-    parts = table_id.split(".")
-    if len(parts) < 3:
-        raise ValueError("Invalid table ID")
-    if len(parts) > 3 and not any(":" in part for part in parts[:-2]):
-        raise TypeError("BigLake tables are not supported yet")
-
-    # Let's just follow the rust regex logic:
-    # it must have at least two dots, and the last two parts must not have dots.
-    if len(parts) >= 3:
-        return table_id
-
-    raise ValueError("Invalid table ID")
+    try:
+        ref = google.cloud.bigquery.TableReference.from_string(table_id)
+        if "." in ref.dataset_id:
+            raise TypeError("BigLake tables are not supported yet")
+        return f"{ref.project}.{ref.dataset_id}.{ref.table_id}"
+    except ValueError as exc:
+        raise ValueError("Invalid table ID") from exc
 
 
 def read_bigquery(
