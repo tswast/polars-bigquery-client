@@ -8,6 +8,7 @@ use gcloud_sdk::google::cloud::bigquery::storage::v1::{
     ReadRowsResponse, ReadSession,
 };
 use gcloud_sdk::*;
+use gcloud_sdk::tonic::async_trait;
 use polars::prelude::*;
 use polars_io::ipc::IpcStreamReader;
 use polars_io::SerReader;
@@ -32,12 +33,77 @@ fn read_rows_response_to_record_batch(response: ReadRowsResponse, schema: &Vec<u
     reader.finish().unwrap()
 }
 
-async fn read_stream(
-    read_client: Arc<GoogleApi<BigQueryReadClient<GoogleAuthMiddleware>>>,
+#[derive(Clone)]
+pub struct BigQueryReadClientBuilder {
+    max_decoding_message_size: usize,
+}
+
+#[async_trait]
+impl GoogleApiClientBuilder<BigQueryReadClient<GoogleAuthMiddleware>> for BigQueryReadClientBuilder {
+    fn create_client(&self, channel: GoogleAuthMiddleware) -> BigQueryReadClient<GoogleAuthMiddleware> {
+        BigQueryReadClient::new(channel).max_decoding_message_size(self.max_decoding_message_size)
+    }
+}
+
+pub struct PolarsBigQueryClientBuilder {
+    max_decoding_message_size: usize,
+    token_source_type: TokenSourceType,
+    scopes: Vec<String>,
+}
+
+impl PolarsBigQueryClientBuilder {
+    pub fn new() -> Self {
+        Self {
+            max_decoding_message_size: 128 * 1024 * 1024, // 128MB default
+            token_source_type: TokenSourceType::Default,
+            scopes: vec!["https://www.googleapis.com/auth/cloud-platform".to_string()],
+        }
+    }
+
+    pub fn with_max_decoding_message_size(mut self, size: usize) -> Self {
+        self.max_decoding_message_size = size;
+        self
+    }
+
+    pub fn with_token_source(mut self, token_source: TokenSourceType) -> Self {
+        self.token_source_type = token_source;
+        self
+    }
+
+    pub fn with_scopes(mut self, scopes: Vec<String>) -> Self {
+        self.scopes = scopes;
+        self
+    }
+
+    pub async fn build(self) -> Result<
+        GoogleApiClient<BigQueryReadClientBuilder, BigQueryReadClient<GoogleAuthMiddleware>>,
+        Box<dyn std::error::Error>
+    > {
+        let builder = BigQueryReadClientBuilder {
+            max_decoding_message_size: self.max_decoding_message_size,
+        };
+
+        let client = GoogleApiClient::with_token_source(
+            builder,
+            "https://bigquerystorage.googleapis.com",
+            None,
+            self.token_source_type,
+            self.scopes,
+        )
+        .await?;
+
+        Ok(client)
+    }
+}
+
+async fn read_stream<B>(
+    read_client: Arc<GoogleApiClient<B, BigQueryReadClient<GoogleAuthMiddleware>>>,
     schema: Arc<Vec<u8>>,
     stream_name: String,
     tx: Arc<tokio::sync::mpsc::Sender<DataFrame>>,
-) {
+) where
+    B: GoogleApiClientBuilder<BigQueryReadClient<GoogleAuthMiddleware>> + Send + Sync + 'static,
+{
     let read_rows_request = ReadRowsRequest {
         read_stream: stream_name.clone(),
         offset: 0,
@@ -92,31 +158,19 @@ fn table_id_to_table_path(table_id: &str) -> Result<String, Box<dyn std::error::
 
 static INIT_CRYPTO: std::sync::Once = std::sync::Once::new();
 
-pub async fn read_bigquery_async(
+pub async fn read_bigquery_with_client<B>(
+    read_client: GoogleApiClient<B, BigQueryReadClient<GoogleAuthMiddleware>>,
     table_id: &str,
     quota_project_id: &str,
     is_ordered: bool,
-    token_source_type: gcloud_sdk::TokenSourceType,
-) -> Result<DataFrame, Box<dyn std::error::Error>> {
+) -> Result<DataFrame, Box<dyn std::error::Error>>
+where
+    B: GoogleApiClientBuilder<BigQueryReadClient<GoogleAuthMiddleware>> + Send + Sync + 'static,
+{
     INIT_CRYPTO.call_once(|| {
         let _ = rustls::crypto::ring::default_provider().install_default();
         // ignore if another crate already set the default provider.
     });
-
-    // TODO(tswast): Set the user-agent header. See
-    // https://github.com/abdolence/gcloud-sdk-rs/issues/226 for some attempts
-    // so far.
-    let read_client: GoogleApi<BigQueryReadClient<GoogleAuthMiddleware>> =
-        GoogleApi::from_function_with_token_source(
-            // Maximum row size in BigQuery is 100 MB, so this should allow for
-            // the largest possible row plus some overhead.
-            |inner| BigQueryReadClient::new(inner).max_decoding_message_size(128 * 1024 * 1024),
-            "https://bigquerystorage.googleapis.com",
-            None,
-            vec!["https://www.googleapis.com/auth/cloud-platform".to_string()],
-            token_source_type,
-        )
-        .await?;
 
     let read_session = ReadSession {
         data_format: DataFormat::Arrow as i32,
@@ -206,6 +260,21 @@ pub async fn read_bigquery_async(
         Ok(value) => Ok(value),
         Err(err) => Err(Box::new(err)),
     }
+}
+
+pub async fn read_bigquery_async(
+    table_id: &str,
+    quota_project_id: &str,
+    is_ordered: bool,
+    token_source_type: gcloud_sdk::TokenSourceType,
+) -> Result<DataFrame, Box<dyn std::error::Error>> {
+    let read_client = PolarsBigQueryClientBuilder::new()
+        .with_token_source(token_source_type)
+        .with_max_decoding_message_size(128 * 1024 * 1024)
+        .build()
+        .await?;
+
+    read_bigquery_with_client(read_client, table_id, quota_project_id, is_ordered).await
 }
 
 #[cfg(test)]

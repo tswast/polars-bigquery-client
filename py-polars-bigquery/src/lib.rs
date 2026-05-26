@@ -3,7 +3,7 @@ use std::sync::Once;
 
 use async_trait::async_trait;
 use chrono::Utc;
-use polars_bigquery_lib::read_bigquery_async;
+
 use pyo3::prelude::*;
 use pyo3::pyfunction;
 use pyo3_polars::PyDataFrame;
@@ -108,17 +108,28 @@ pub fn read_bigquery(
     let token_source_type = gcloud_sdk::TokenSourceType::ExternalSource(Box::new(token_source));
 
     let rt = pyo3_async_runtimes::tokio::get_runtime();
-    let result = rt.block_on(read_bigquery_async(
-        table,
-        quota_project_id,
-        is_ordered,
-        token_source_type,
-    ));
+    
+    let result = rt.block_on(async {
+        let client = polars_bigquery_lib::PolarsBigQueryClientBuilder::new()
+            .with_token_source(token_source_type)
+            .with_max_decoding_message_size(128 * 1024 * 1024)
+            .build()
+            .await
+            .map_err(|err| pyo3::exceptions::PyRuntimeError::new_err(err.to_string()))?;
+
+        polars_bigquery_lib::read_bigquery_with_client(
+            client,
+            table,
+            quota_project_id,
+            is_ordered,
+        )
+        .await
+        .map_err(|err| pyo3::exceptions::PyRuntimeError::new_err(err.to_string()))
+    });
+
     match result {
         Ok(value) => Ok(pyo3_polars::PyDataFrame(value)),
-        Err(err) => Err(pyo3::PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
-            err.to_string(),
-        )),
+        Err(err) => Err(err),
     }
 }
 
