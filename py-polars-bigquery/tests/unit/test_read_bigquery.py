@@ -40,6 +40,20 @@ def test_parse_table_id_invalid_format():
         _parse_table_id("just_a_string")
     with pytest.raises(TypeError, match="BigLake tables are not supported yet"):
         _parse_table_id("too.many.parts.here")
+    with pytest.raises(TypeError, match="BigLake tables are not supported yet"):
+        _parse_table_id("google.com:project.ds.with.dot.tab")
+    with pytest.raises(TypeError, match="BigLake tables are not supported yet"):
+        _parse_table_id("project.ds.with.dot.tab")
+
+
+def test_parse_table_id_table_reference_invalid():
+    mock_ref = MagicMock()
+    mock_ref.project = "p"
+    mock_ref.dataset_id = "d.with.dot"
+    mock_ref.table_id = "t"
+    with pytest.raises(TypeError, match="BigLake tables are not supported yet"):
+        _parse_table_id(mock_ref)
+
 
 
 def test_parse_table_id_invalid_type():
