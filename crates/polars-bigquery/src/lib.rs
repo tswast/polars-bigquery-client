@@ -79,6 +79,7 @@ impl PolarsBigQueryClientBuilder {
         GoogleApiClient<BigQueryReadClientBuilder, BigQueryReadClient<GoogleAuthMiddleware>>,
         Box<dyn std::error::Error>
     > {
+        init_crypto();
         let builder = BigQueryReadClientBuilder {
             max_decoding_message_size: self.max_decoding_message_size,
         };
@@ -158,6 +159,13 @@ fn table_id_to_table_path(table_id: &str) -> Result<String, Box<dyn std::error::
 
 static INIT_CRYPTO: std::sync::Once = std::sync::Once::new();
 
+pub fn init_crypto() {
+    INIT_CRYPTO.call_once(|| {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        // ignore if another crate already set the default provider.
+    });
+}
+
 pub async fn read_bigquery_with_client<B>(
     read_client: GoogleApiClient<B, BigQueryReadClient<GoogleAuthMiddleware>>,
     table_id: &str,
@@ -167,10 +175,7 @@ pub async fn read_bigquery_with_client<B>(
 where
     B: GoogleApiClientBuilder<BigQueryReadClient<GoogleAuthMiddleware>> + Send + Sync + 'static,
 {
-    INIT_CRYPTO.call_once(|| {
-        let _ = rustls::crypto::ring::default_provider().install_default();
-        // ignore if another crate already set the default provider.
-    });
+    init_crypto();
 
     let read_session = ReadSession {
         data_format: DataFormat::Arrow as i32,
