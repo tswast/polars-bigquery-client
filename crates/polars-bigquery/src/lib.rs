@@ -7,17 +7,17 @@ use gcloud_sdk::google::cloud::bigquery::storage::v1::{
     read_rows_response, read_session, CreateReadSessionRequest, DataFormat, ReadRowsRequest,
     ReadRowsResponse, ReadSession,
 };
-use gcloud_sdk::*;
 use gcloud_sdk::tonic::async_trait;
+use gcloud_sdk::*;
 use hyper::header::{HeaderValue, USER_AGENT};
 use hyper::HeaderMap;
-use polars::prelude::*;
-use polars_io::ipc::IpcStreamReader;
-use polars_io::SerReader;
+use polars_arrow::datatypes::ArrowSchemaRef;
+use polars_arrow::io::ipc::read::{read_stream_metadata, StreamReader, StreamState};
+use polars_arrow::record_batch::RecordBatch;
 
-fn read_rows_response_to_record_batch(response: ReadRowsResponse, schema: &Vec<u8>) -> DataFrame {
+fn read_rows_response_to_record_batch(response: ReadRowsResponse, schema: &[u8]) -> RecordBatch {
     let mut buffer = Vec::new();
-    buffer.append(&mut schema.clone());
+    buffer.extend_from_slice(schema);
     // TODO: Bubble up if we unexpectedly get a record batch with no rows.
     // TODO: This might not actually be unexpected? What happens when there's a
     // super selective row filter?
@@ -27,12 +27,16 @@ fn read_rows_response_to_record_batch(response: ReadRowsResponse, schema: &Vec<u
     };
     buffer.append(&mut serialized_record_batch);
 
-    let cursor = Cursor::new(buffer);
-    let reader = IpcStreamReader::new(cursor);
+    let mut cursor = Cursor::new(buffer);
+    let metadata = read_stream_metadata(&mut cursor).unwrap();
+    let mut reader = StreamReader::new(cursor, metadata, None);
 
     // TODO: maybe double-check that there are no recordbatches after this?
     // There should only be one if the API returned the expected results.
-    reader.finish().unwrap()
+    match reader.next().unwrap().unwrap() {
+        StreamState::Some(batch) => batch,
+        _ => panic!("expected a batch"),
+    }
 }
 
 #[derive(Clone)]
@@ -41,8 +45,13 @@ pub struct BigQueryReadClientBuilder {
 }
 
 #[async_trait]
-impl GoogleApiClientBuilder<BigQueryReadClient<GoogleAuthMiddleware>> for BigQueryReadClientBuilder {
-    fn create_client(&self, channel: GoogleAuthMiddleware) -> BigQueryReadClient<GoogleAuthMiddleware> {
+impl GoogleApiClientBuilder<BigQueryReadClient<GoogleAuthMiddleware>>
+    for BigQueryReadClientBuilder
+{
+    fn create_client(
+        &self,
+        channel: GoogleAuthMiddleware,
+    ) -> BigQueryReadClient<GoogleAuthMiddleware> {
         BigQueryReadClient::new(channel).max_decoding_message_size(self.max_decoding_message_size)
     }
 }
@@ -84,9 +93,11 @@ impl PolarsBigQueryClientBuilder {
         self
     }
 
-    pub async fn build(self) -> Result<
+    pub async fn build(
+        self,
+    ) -> Result<
         GoogleApiClient<BigQueryReadClientBuilder, BigQueryReadClient<GoogleAuthMiddleware>>,
-        Box<dyn std::error::Error>
+        Box<dyn std::error::Error>,
     > {
         init_crypto();
         let builder = BigQueryReadClientBuilder {
@@ -101,10 +112,7 @@ impl PolarsBigQueryClientBuilder {
         };
 
         let mut headers = HeaderMap::new();
-        headers.insert(
-            USER_AGENT,
-            HeaderValue::from_str(&user_agent)?,
-        );
+        headers.insert(USER_AGENT, HeaderValue::from_str(&user_agent)?);
 
         let client = GoogleApiClient::with_token_source_and_headers(
             builder,
@@ -124,7 +132,7 @@ async fn read_stream<B>(
     read_client: Arc<GoogleApiClient<B, BigQueryReadClient<GoogleAuthMiddleware>>>,
     schema: Arc<Vec<u8>>,
     stream_name: String,
-    tx: Arc<tokio::sync::mpsc::Sender<DataFrame>>,
+    tx: Arc<tokio::sync::mpsc::Sender<RecordBatch>>,
 ) where
     B: GoogleApiClientBuilder<BigQueryReadClient<GoogleAuthMiddleware>> + Send + Sync + 'static,
 {
@@ -194,7 +202,7 @@ pub async fn read_bigquery_with_client<B>(
     table_id: &str,
     quota_project_id: &str,
     is_ordered: bool,
-) -> Result<DataFrame, Box<dyn std::error::Error>>
+) -> Result<(ArrowSchemaRef, Vec<RecordBatch>), Box<dyn std::error::Error>>
 where
     B: GoogleApiClientBuilder<BigQueryReadClient<GoogleAuthMiddleware>> + Send + Sync + 'static,
 {
@@ -232,6 +240,10 @@ where
         _ => panic!("unexpectedly got schema type other than arrow"),
     };
 
+    let mut schema_cursor = Cursor::new(schema.clone());
+    let metadata = read_stream_metadata(&mut schema_cursor)?;
+    let schema_ref = Arc::new(metadata.schema);
+
     let (tx, mut rx) = tokio::sync::mpsc::channel(1024); // Create an MPSC channel
     let shared_tx = Arc::new(tx);
     let shared_client = Arc::new(read_client);
@@ -267,27 +279,7 @@ where
         handle.await?;
     }
 
-    let concat_args = UnionArgs {
-        parallel: true,
-        rechunk: true,
-        to_supertypes: false,
-        diagonal: false,
-        from_partitioned_ds: false,
-        maintain_order: false,
-        strict: false,
-    };
-    let combined = polars::prelude::concat(
-        batches
-            .into_iter()
-            .map(|df| df.lazy())
-            .collect::<Vec<LazyFrame>>(),
-        concat_args,
-    );
-    let collected = combined?.collect();
-    match collected {
-        Ok(value) => Ok(value),
-        Err(err) => Err(Box::new(err)),
-    }
+    Ok((schema_ref, batches))
 }
 
 pub async fn read_bigquery_async(
@@ -295,7 +287,7 @@ pub async fn read_bigquery_async(
     quota_project_id: &str,
     is_ordered: bool,
     token_source_type: gcloud_sdk::TokenSourceType,
-) -> Result<DataFrame, Box<dyn std::error::Error>> {
+) -> Result<(ArrowSchemaRef, Vec<RecordBatch>), Box<dyn std::error::Error>> {
     let read_client = PolarsBigQueryClientBuilder::new()
         .with_token_source(token_source_type)
         .with_max_decoding_message_size(128 * 1024 * 1024)

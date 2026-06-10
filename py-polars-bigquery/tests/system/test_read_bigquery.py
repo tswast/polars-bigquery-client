@@ -43,4 +43,3 @@ def test_read_bigquery_public_data_unordered():
     # Make sure we got all of the expected data, not just a subset.
     assert df.height > 200  # rows
     assert df.width > 0  # columns
-

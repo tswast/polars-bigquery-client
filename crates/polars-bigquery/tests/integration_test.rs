@@ -1,9 +1,11 @@
-use polars_bigquery::*;
 use std::env;
+
+use polars_bigquery::*;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_read_small_public_table() {
-    let quota_project_id = env::var("GOOGLE_CLOUD_PROJECT").expect("must set GOOGLE_CLOUD_PROJECT to run integration tests");
+    let quota_project_id = env::var("GOOGLE_CLOUD_PROJECT")
+        .expect("must set GOOGLE_CLOUD_PROJECT to run integration tests");
 
     let client = PolarsBigQueryClientBuilder::new()
         .with_token_source(gcloud_sdk::TokenSourceType::Default)

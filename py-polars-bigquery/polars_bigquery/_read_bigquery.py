@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Dict
+from typing import Any, Dict
 
 import polars as pl
 
@@ -9,12 +9,14 @@ from .core.run_query import run_query
 
 _DEFAULT_CREDENTIAL_PROVIDERS: Dict[str, pl.CredentialProviderGCP] = {}
 
+
 def _get_default_provider(quota_project_id: str) -> pl.CredentialProviderGCP:
     if quota_project_id not in _DEFAULT_CREDENTIAL_PROVIDERS:
         _DEFAULT_CREDENTIAL_PROVIDERS[quota_project_id] = pl.CredentialProviderGCP(
             quota_project_id=quota_project_id
         )
     return _DEFAULT_CREDENTIAL_PROVIDERS[quota_project_id]
+
 
 def _parse_table_id(table_id: Any) -> str:
     if not isinstance(table_id, str):
@@ -47,6 +49,7 @@ def read_bigquery(
     quota_project_id: str,
     credentials_provider: pl.CredentialProviderGCP | None = None,
     is_ordered: bool = False,
+    user_agent: str | None = None,
 ) -> pl.DataFrame:
     if not table and not query:
         raise ValueError("One of `table` or `query` must be provided.")
@@ -62,6 +65,7 @@ def read_bigquery(
     else:
         table = _parse_table_id(table)
 
-    return polars_bigquery.read_bigquery(
-        table, quota_project_id, is_ordered, credentials_provider
+    res = polars_bigquery.read_bigquery(
+        table, quota_project_id, is_ordered, credentials_provider, user_agent
     )
+    return pl.DataFrame(res)

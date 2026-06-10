@@ -56,7 +56,9 @@ def test_read_bigquery_calls_rust_with_parsed_id(mock_rust_read):
     result = read_bigquery(table="my-project.my_dataset.my_table", quota_project_id="q")
 
     # Assert
-    mock_rust_read.assert_called_once_with("my-project.my_dataset.my_table", "q", False, ANY, None)
+    mock_rust_read.assert_called_once_with(
+        "my-project.my_dataset.my_table", "q", False, ANY, None
+    )
     assert result.equals(mock_df)
 
 
@@ -73,7 +75,9 @@ def test_read_bigquery_with_query(mock_rust_read):
 
         # Assert
         mock_run_query.assert_called_once_with("SELECT 1", "q", ANY)
-        mock_rust_read.assert_called_once_with("project.dataset.temp_table", "q", False, ANY, None)
+        mock_rust_read.assert_called_once_with(
+            "project.dataset.temp_table", "q", False, ANY, None
+        )
         assert result.equals(mock_df)
 
 
@@ -107,16 +111,10 @@ def test_read_bigquery_with_user_agent(mock_rust_read):
 
     # Execute
     read_bigquery(
-        table="p.d.t",
-        quota_project_id="q",
-        user_agent="custom-extension/1.0"
+        table="p.d.t", quota_project_id="q", user_agent="custom-extension/1.0"
     )
 
     # Assert
     mock_rust_read.assert_called_once_with(
-        "p.d.t",
-        "q",
-        False,
-        ANY,
-        "custom-extension/1.0"
+        "p.d.t", "q", False, ANY, "custom-extension/1.0"
     )

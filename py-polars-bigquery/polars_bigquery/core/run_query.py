@@ -4,7 +4,6 @@ TODO(tswast): Implement this in Rust using jobs.query and the
 JOB_CREATION_OPTIONAL parameter to improve latency in small query results.
 """
 
-import time
 
 import polars as pl
 import requests
@@ -14,7 +13,6 @@ import polars_bigquery.exceptions
 
 
 _BIGQUERY_ENDPOINT = "https://bigquery.googleapis.com/bigquery/v2"
-
 
 
 def _get_user_agent() -> str:
@@ -63,7 +61,9 @@ def _wait_for_job(job_id: str, quota_project_id: str, headers: dict) -> dict:
             return job
 
         # jobs.getQueryResults waits about 10s or until the query finishes.
-        requests.get(_get_query_results_url(job_id, quota_project_id), headers=headers).json()
+        requests.get(
+            _get_query_results_url(job_id, quota_project_id), headers=headers
+        ).json()
 
 
 def run_query(
