@@ -79,7 +79,6 @@ jobs:
           uv pip install maturin
 
       - name: Install Python dependencies
-        if: matrix.python-version != '3.14t'
         run: |
           pip install uv
           if [ "${{ matrix.python-version }}" = "3.10" ]; then
